@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,24 @@ func NewClient(dynamicClient dynamic.Interface) *unstructuredClient {
 	}
 }
 
-func (u *unstructuredClient) createWithObject(pod corev1.Pod) error {
+func (u *unstructuredClient) createWithJSON(pod corev1.Pod) error {
+	bytes, err := json.Marshal(pod)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("pod json string: %s\n", string(bytes))
+	obj := &unstructured.Unstructured{}
+	if _, _, err := unstructured.UnstructuredJSONScheme.Decode(bytes, &podGVK, obj); err != nil {
+		return err
+	}
+	fmt.Printf("obj: %v\n", obj)
+
+	_, err = u.dynamicClient.Resource(podGVR).Namespace(corev1.NamespaceDefault).Create(context.TODO(), obj, metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -48,7 +66,7 @@ func (u *unstructuredClient) createWithYaml(pod corev1.Pod) error {
 		return err
 	}
 
-	fmt.Printf("yaml string: %s\n", string(bytes))
+	fmt.Printf("pod yaml string: %s\n", string(bytes))
 
 	obj := &unstructured.Unstructured{}
 	decoder := serializer.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
@@ -70,6 +88,7 @@ func main() {
 		panic(err)
 	}
 
+	//config.GroupVersion = &schema.GroupVersion{Group: "", Version: "v1"}
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		panic(err)
@@ -77,6 +96,10 @@ func main() {
 
 	client := NewClient(dynamicClient)
 	pod := corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "fake",
 		},
@@ -90,8 +113,9 @@ func main() {
 		},
 	}
 
-	fmt.Printf("create with yaml\n")
-	err = client.createWithYaml(pod)
+	fmt.Printf("create with JSON\n")
+	//err = client.createWithYaml(pod)
+	err = client.createWithJSON(pod)
 	if err != nil {
 		panic(err)
 	}
